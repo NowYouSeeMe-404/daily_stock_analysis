@@ -69,6 +69,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-all.ps1
   - 在 Actions 页面手动触发并指定 `release_tag`
 - 产物：
   - Windows 安装包：Release 附件会整理为 `daily-stock-analysis-windows-installer-<tag>.exe`，本地 `apps/dsa-desktop/dist/` 中仍是 `*Setup*.exe`
+  - Windows 自动更新元数据：Release 附件会额外保留 electron-builder 原始 `*Setup*.exe`、`latest.yml` 和 `*.blockmap`，供安装版桌面端后台下载与校验更新
   - Windows 免安装包：`daily-stock-analysis-windows-noinstall-<tag>.zip`
   - macOS Intel：`daily-stock-analysis-macos-x64-<tag>.dmg`
   - macOS Apple Silicon：`daily-stock-analysis-macos-arm64-<tag>.dmg`
@@ -164,11 +165,11 @@ win-unpacked/
 
 ### 桌面端更新提醒
 
-- 应用在主界面加载完成后会后台请求 GitHub Releases 的最新正式版（`/releases/latest`），并与当前 `app.getVersion()` 做语义化版本比较
-- 检测到新版本时，会弹出一次性提醒对话框，主操作为“前往下载”，点击后直接打开对应 Release 页面
-- `系统设置 -> 版本信息` 中新增“桌面端更新”区域，可手动点击“检查更新”查看状态并再次跳转下载页
-- 当前实现仅做“提醒 + 跳转下载页”，不会静默下载、自动替换安装包，也不会因为网络失败而阻断桌面端启动
-- 版本检查失败、GitHub API 超时或返回异常时，只会记录到 `logs/desktop.log`，设置页手动检查时才会展示错误状态
+- 应用在主界面加载完成后会后台检查 GitHub Releases 的最新正式版，并与当前 `app.getVersion()` 做语义化版本比较
+- Windows NSIS 安装版会通过内置 GitHub 更新源自动下载新版本；下载完成后弹出一次性提醒，用户确认后重启并安装
+- `系统设置 -> 版本信息` 中的“桌面端更新”区域可手动检查更新；若更新已下载，会展示“重启安装”操作
+- Windows 免安装包、开发态和 macOS DMG 仍保持“提醒 + 跳转下载页”的兼容路径，不会因为网络失败而阻断桌面端启动
+- 版本检查失败、GitHub API 超时、更新元数据缺失或下载安装异常时，会记录到 `logs/desktop.log`，设置页手动检查时会展示错误状态
 
 ## 常见问题
 

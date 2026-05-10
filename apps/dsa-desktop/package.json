@@ -8,6 +8,9 @@
     "build": "electron-builder",
     "test": "node --test tests/preload.test.js"
   },
+  "dependencies": {
+    "electron-updater": "^6.8.3"
+  },
   "devDependencies": {
     "electron": "^31.4.0",
     "electron-builder": "^24.13.3"
@@ -34,7 +37,14 @@
       }
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "publish": [
+        {
+          "provider": "github",
+          "owner": "ZhuLinsen",
+          "repo": "daily_stock_analysis"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

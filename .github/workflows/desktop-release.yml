@@ -75,7 +75,13 @@ jobs:
           $exeTarget = "dist/release-assets/daily-stock-analysis-windows-installer-$env:RELEASE_TAG.exe"
           $zipTarget = "dist/release-assets/daily-stock-analysis-windows-noinstall-$env:RELEASE_TAG.zip"
           Copy-Item -Path $installerExe.FullName -Destination $exeTarget -Force
+          Copy-Item -Path $installerExe.FullName -Destination "dist/release-assets/$($installerExe.Name)" -Force
           Compress-Archive -Path $winUnpacked -DestinationPath $zipTarget -CompressionLevel Optimal -Force
+          Get-ChildItem -Path 'apps/dsa-desktop/dist' -File |
+            Where-Object { $_.Name -eq 'latest.yml' -or $_.Name -like '*.blockmap' } |
+            ForEach-Object {
+              Copy-Item -Path $_.FullName -Destination "dist/release-assets/$($_.Name)" -Force
+            }
 
       - uses: actions/upload-artifact@v6
         with:

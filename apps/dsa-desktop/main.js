@@ -13,6 +13,10 @@ let logFilePath = null;
 let backendStartError = null;
 let desktopUpdateState = null;
 let lastNotifiedUpdateVersion = '';
+let lastPromptedInstallVersion = '';
+let electronAutoUpdater = undefined;
+let electronAutoUpdaterConfigured = false;
+let electronUpdateCheckInFlight = false;
 
 function resolveWindowBackgroundColor() {
   return nativeTheme.shouldUseDarkColors ? '#08080c' : '#f4f7fb';
@@ -31,7 +35,15 @@ const UPDATE_STATUS = Object.freeze({
   CHECKING: 'checking',
   UP_TO_DATE: 'up-to-date',
   UPDATE_AVAILABLE: 'update-available',
+  DOWNLOADING: 'downloading',
+  UPDATE_DOWNLOADED: 'update-downloaded',
+  INSTALLING: 'installing',
   ERROR: 'error',
+});
+
+const UPDATE_MODE = Object.freeze({
+  AUTO: 'auto',
+  MANUAL: 'manual',
 });
 
 function normalizeVersionString(version) {
@@ -122,9 +134,26 @@ function compareVersions(leftVersion, rightVersion) {
   return 0;
 }
 
+function normalizeFiniteNumber(value, fallback = null) {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+  const numberValue = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function normalizeDownloadPercent(value) {
+  const percent = normalizeFiniteNumber(value);
+  if (percent === null) {
+    return null;
+  }
+  return Math.min(100, Math.max(0, Math.round(percent * 10) / 10));
+}
+
 function buildUpdateState(state = {}) {
   return {
     status: state.status || UPDATE_STATUS.IDLE,
+    updateMode: state.updateMode === UPDATE_MODE.AUTO ? UPDATE_MODE.AUTO : UPDATE_MODE.MANUAL,
     currentVersion: normalizeVersionString(state.currentVersion),
     latestVersion: normalizeVersionString(state.latestVersion),
     releaseUrl:
@@ -136,6 +165,9 @@ function buildUpdateState(state = {}) {
     message: typeof state.message === 'string' ? state.message : '',
     releaseName: typeof state.releaseName === 'string' ? state.releaseName : '',
     tagName: typeof state.tagName === 'string' ? state.tagName : '',
+    downloadPercent: normalizeDownloadPercent(state.downloadPercent),
+    downloadedBytes: normalizeFiniteNumber(state.downloadedBytes),
+    totalBytes: normalizeFiniteNumber(state.totalBytes),
   };
 }
 
@@ -733,6 +765,66 @@ function resolveDesktopVersion() {
   return String(app.getVersion() || '').trim();
 }
 
+function isWindowsNsisInstalledApp() {
+  if (!isWindows || !app.isPackaged) {
+    return false;
+  }
+
+  const appDir = path.dirname(app.getPath('exe'));
+  return fs.existsSync(path.join(appDir, 'Uninstall Daily Stock Analysis.exe'));
+}
+
+function getElectronAutoUpdater() {
+  if (electronAutoUpdater !== undefined) {
+    return electronAutoUpdater;
+  }
+
+  if (!isWindowsNsisInstalledApp()) {
+    electronAutoUpdater = null;
+    return electronAutoUpdater;
+  }
+
+  try {
+    electronAutoUpdater = require('electron-updater').autoUpdater;
+  } catch (error) {
+    electronAutoUpdater = null;
+    logLine(`[update] electron-updater unavailable: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  return electronAutoUpdater;
+}
+
+function canUseElectronAutoUpdater() {
+  return Boolean(getElectronAutoUpdater());
+}
+
+function resolveReleasePageUrlForVersion(version) {
+  const normalizedVersion = normalizeVersionString(version);
+  if (!normalizedVersion) {
+    return RELEASES_PAGE_URL;
+  }
+  return `${RELEASES_PAGE_URL}/tag/v${normalizedVersion}`;
+}
+
+function resolveUpdaterLatestVersion(updateInfo = {}) {
+  return normalizeVersionString(updateInfo.version || updateInfo.tag || updateInfo.releaseName);
+}
+
+function buildElectronUpdaterState(status, updateInfo = {}, extraState = {}) {
+  const latestVersion = normalizeVersionString(extraState.latestVersion || resolveUpdaterLatestVersion(updateInfo));
+  return buildUpdateState({
+    status,
+    updateMode: UPDATE_MODE.AUTO,
+    currentVersion: resolveDesktopVersion(),
+    latestVersion,
+    releaseUrl: resolveReleasePageUrlForVersion(latestVersion),
+    publishedAt: typeof updateInfo.releaseDate === 'string' ? updateInfo.releaseDate : '',
+    releaseName: typeof updateInfo.releaseName === 'string' ? updateInfo.releaseName : '',
+    tagName: latestVersion ? `v${latestVersion}` : '',
+    ...extraState,
+  });
+}
+
 function sanitizeReleaseUrl(candidateUrl) {
   if (typeof candidateUrl !== 'string' || !candidateUrl.trim()) {
     return RELEASES_PAGE_URL;
@@ -771,6 +863,9 @@ async function maybePromptDesktopUpdate(state) {
   if (!state || state.status !== UPDATE_STATUS.UPDATE_AVAILABLE) {
     return;
   }
+  if (state.updateMode === UPDATE_MODE.AUTO) {
+    return;
+  }
   if (!state.latestVersion || state.latestVersion === lastNotifiedUpdateVersion) {
     return;
   }
@@ -796,7 +891,182 @@ async function maybePromptDesktopUpdate(state) {
   }
 }
 
+async function installDownloadedUpdate() {
+  const updater = getElectronAutoUpdater();
+  if (!updater) {
+    throw new Error('当前运行模式不支持自动安装更新。');
+  }
+  if (desktopUpdateState?.status !== UPDATE_STATUS.UPDATE_DOWNLOADED) {
+    throw new Error('更新尚未下载完成，无法自动安装。');
+  }
+
+  setDesktopUpdateState({
+    status: UPDATE_STATUS.INSTALLING,
+    updateMode: UPDATE_MODE.AUTO,
+    latestVersion: desktopUpdateState?.latestVersion || '',
+    releaseUrl: desktopUpdateState?.releaseUrl || RELEASES_PAGE_URL,
+    message: '正在重启并安装更新...',
+  });
+  logLine('[update] quit and install requested');
+  stopBackend();
+  updater.quitAndInstall(false, true);
+  return true;
+}
+
+async function maybePromptInstallDownloadedUpdate(state) {
+  if (!state || state.status !== UPDATE_STATUS.UPDATE_DOWNLOADED || state.updateMode !== UPDATE_MODE.AUTO) {
+    return;
+  }
+  if (!state.latestVersion || state.latestVersion === lastPromptedInstallVersion) {
+    return;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  lastPromptedInstallVersion = state.latestVersion;
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    buttons: ['稍后', '立即重启安装'],
+    defaultId: 1,
+    cancelId: 0,
+    title: '更新已下载',
+    message: `桌面端新版本 ${state.latestVersion} 已下载`,
+    detail: '重启应用后会自动完成安装。未保存的设置草稿请先保存。',
+    noLink: true,
+  });
+
+  if (result.response === 1) {
+    await installDownloadedUpdate();
+  }
+}
+
+function configureElectronAutoUpdater() {
+  const updater = getElectronAutoUpdater();
+  if (!updater || electronAutoUpdaterConfigured) {
+    return updater;
+  }
+
+  updater.autoDownload = true;
+  updater.autoInstallOnAppQuit = true;
+
+  updater.on('checking-for-update', () => {
+    setDesktopUpdateState({
+      status: UPDATE_STATUS.CHECKING,
+      updateMode: UPDATE_MODE.AUTO,
+      currentVersion: resolveDesktopVersion(),
+      message: '正在检查桌面端更新...',
+    });
+  });
+
+  updater.on('update-available', (info = {}) => {
+    const latestVersion = resolveUpdaterLatestVersion(info) || '最新版本';
+    const nextState = buildElectronUpdaterState(UPDATE_STATUS.UPDATE_AVAILABLE, info, {
+      message: `发现新版本 ${latestVersion}，正在后台下载更新...`,
+    });
+    setDesktopUpdateState(nextState);
+    logLine(`[update] auto update available latest=${nextState.latestVersion || 'unknown'}`);
+  });
+
+  updater.on('update-not-available', (info = {}) => {
+    const nextState = buildElectronUpdaterState(UPDATE_STATUS.UP_TO_DATE, info, {
+      message: '当前桌面端已是最新版本。',
+    });
+    setDesktopUpdateState(nextState);
+    logLine(`[update] auto update not available current=${nextState.currentVersion || 'unknown'}`);
+  });
+
+  updater.on('download-progress', (progress = {}) => {
+    const percent = normalizeDownloadPercent(progress.percent);
+    const nextState = setDesktopUpdateState({
+      status: UPDATE_STATUS.DOWNLOADING,
+      updateMode: UPDATE_MODE.AUTO,
+      latestVersion: desktopUpdateState?.latestVersion || '',
+      releaseUrl: desktopUpdateState?.releaseUrl || RELEASES_PAGE_URL,
+      downloadPercent: percent,
+      downloadedBytes: progress.transferred,
+      totalBytes: progress.total,
+      message:
+        percent === null
+          ? '正在下载桌面端更新...'
+          : `正在下载桌面端更新（${percent.toFixed(percent % 1 === 0 ? 0 : 1)}%）...`,
+    });
+    logLine(`[update] download progress percent=${nextState.downloadPercent ?? 'unknown'}`);
+  });
+
+  updater.on('update-downloaded', (info = {}) => {
+    const latestVersion = resolveUpdaterLatestVersion(info) || desktopUpdateState?.latestVersion || '';
+    const nextState = buildElectronUpdaterState(UPDATE_STATUS.UPDATE_DOWNLOADED, info, {
+      latestVersion,
+      downloadPercent: 100,
+      message: latestVersion
+        ? `新版本 ${latestVersion} 已下载，可重启应用完成安装。`
+        : '新版本已下载，可重启应用完成安装。',
+    });
+    setDesktopUpdateState(nextState);
+    logLine(`[update] downloaded latest=${nextState.latestVersion || 'unknown'}`);
+    void maybePromptInstallDownloadedUpdate(nextState);
+  });
+
+  updater.on('error', (error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    logLine(`[update] auto updater failed: ${message}`);
+    setDesktopUpdateState({
+      status: UPDATE_STATUS.ERROR,
+      updateMode: UPDATE_MODE.AUTO,
+      currentVersion: resolveDesktopVersion(),
+      latestVersion: desktopUpdateState?.latestVersion || '',
+      releaseUrl: desktopUpdateState?.releaseUrl || RELEASES_PAGE_URL,
+      checkedAt: new Date().toISOString(),
+      message: `自动更新失败：${message}`,
+    });
+  });
+
+  electronAutoUpdaterConfigured = true;
+  return updater;
+}
+
+async function performElectronUpdaterCheck({ manual = false } = {}) {
+  const updater = configureElectronAutoUpdater();
+  if (!updater) {
+    throw new Error('当前平台不支持自动安装更新。');
+  }
+  if (electronUpdateCheckInFlight) {
+    return desktopUpdateState;
+  }
+
+  electronUpdateCheckInFlight = true;
+  setDesktopUpdateState({
+    status: UPDATE_STATUS.CHECKING,
+    updateMode: UPDATE_MODE.AUTO,
+    currentVersion: resolveDesktopVersion(),
+    message: manual ? '正在检查桌面端更新...' : '正在后台检查桌面端更新...',
+  });
+
+  try {
+    await updater.checkForUpdates();
+    return desktopUpdateState;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logLine(`[update] auto updater check failed: ${message}`);
+    const nextState = setDesktopUpdateState({
+      status: manual ? UPDATE_STATUS.ERROR : UPDATE_STATUS.IDLE,
+      updateMode: UPDATE_MODE.AUTO,
+      currentVersion: resolveDesktopVersion(),
+      checkedAt: new Date().toISOString(),
+      message: manual ? `检查更新失败：${message}` : '',
+    });
+    return nextState;
+  } finally {
+    electronUpdateCheckInFlight = false;
+  }
+}
+
 async function performDesktopUpdateCheck({ manual = false, notify = false } = {}) {
+  if (canUseElectronAutoUpdater()) {
+    return performElectronUpdaterCheck({ manual, notify });
+  }
+
   const currentVersion = resolveDesktopVersion();
   setDesktopUpdateState({
     status: UPDATE_STATUS.CHECKING,
@@ -838,6 +1108,7 @@ async function performDesktopUpdateCheck({ manual = false, notify = false } = {}
 
 ipcMain.handle('desktop:get-update-state', () => desktopUpdateState);
 ipcMain.handle('desktop:check-for-updates', () => performDesktopUpdateCheck({ manual: true }));
+ipcMain.handle('desktop:install-downloaded-update', () => installDownloadedUpdate());
 ipcMain.handle('desktop:open-release-page', async (_event, releaseUrl) => {
   await shell.openExternal(sanitizeReleaseUrl(releaseUrl));
   return true;
@@ -1039,6 +1310,7 @@ module.exports = {
   GITHUB_REPO,
   LATEST_RELEASE_API_URL,
   RELEASES_PAGE_URL,
+  UPDATE_MODE,
   UPDATE_STATUS,
   buildUpdateState,
   checkForDesktopUpdates,
