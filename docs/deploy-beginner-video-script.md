@@ -178,7 +178,7 @@ docker-compose -f ./docker/docker-compose.yml logs -f --tail=120
 #### 症状 3：端口访问失败
 
 ```bash
-docker-compose -f ./docker/docker-compose.yml exec server sh -lc "curl -sS -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:${API_PORT:-8000}/"
+docker-compose -f ./docker/docker-compose.yml exec server sh -lc "curl -sS -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:\${API_PORT:-8000}/"
 sudo ufw status
 ```
 常见是 8000 没放行或进程未监听。
