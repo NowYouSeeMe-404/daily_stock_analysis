@@ -275,13 +275,18 @@ def _is_escaped_pipe(value: str, index: int) -> bool:
     return slash_count % 2 == 1
 
 
+def _strip_markdown_table_boundaries(row: str) -> str:
+    value = row.strip()
+    while value.startswith("|"):
+        value = value[1:]
+    while value.endswith("|") and not _is_escaped_pipe(value, len(value) - 1):
+        value = value[:-1]
+    return value
+
+
 def _parse_markdown_table_row(row: str) -> List[str]:
     """Split a Markdown table row while preserving escaped literal pipes."""
-    value = row.strip()
-    if value.startswith("|"):
-        value = value[1:]
-    if value.endswith("|") and not _is_escaped_pipe(value, len(value) - 1):
-        value = value[:-1]
+    value = _strip_markdown_table_boundaries(row)
 
     cells: List[str] = []
     current: List[str] = []
@@ -309,9 +314,10 @@ def _is_markdown_table_row(row: str) -> bool:
 
 
 def _is_markdown_table_separator(row: str) -> bool:
-    return bool(
-        re.match(r'^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$', row)
-    )
+    cells = _parse_markdown_table_row(row)
+    if len(cells) < 2:
+        return False
+    return all(re.fullmatch(r':?-{3,}:?', cell.strip()) for cell in cells)
 
 
 def _split_markdown_blocks(content: str) -> List[str]:
@@ -375,7 +381,8 @@ def _contains_markdown_table(content: str) -> bool:
 
 def _split_markdown_table_block(content: str, max_bytes: int) -> List[str]:
     """将单个 Markdown 表格按行拆分，并在每段前补齐表头。"""
-    lines = [line.rstrip() for line in content.splitlines()]
+    raw_lines = content.splitlines(True)
+    lines = [line.rstrip("\r\n") for line in raw_lines]
     if len(lines) < 2:
         return [content]
 
@@ -386,21 +393,25 @@ def _split_markdown_table_block(content: str, max_bytes: int) -> List[str]:
     if separator_index is None:
         return [content]
 
-    header = lines[0]
-    separator = lines[1]
-    data_rows = [line for line in lines[separator_index + 1:] if line.strip()]
+    header = raw_lines[0]
+    separator = raw_lines[1]
+    data_rows = [
+        raw_lines[index]
+        for index in range(separator_index + 1, len(raw_lines))
+        if raw_lines[index].strip()
+    ]
     if not data_rows:
         return [content]
 
     template = [header, separator]
-    if _bytes("\n".join(template)) > max_bytes:
+    if _bytes("".join(template)) > max_bytes:
         return [content]
 
     chunks: List[str] = []
     current_rows: List[str] = []
 
     for row in data_rows:
-        candidate = "\n".join(template + current_rows + [row])
+        candidate = "".join(template + current_rows + [row])
         if _bytes(candidate) <= max_bytes:
             current_rows.append(row)
             continue
@@ -411,15 +422,15 @@ def _split_markdown_table_block(content: str, max_bytes: int) -> List[str]:
             current_rows = []
             continue
 
-        chunks.append("\n".join(template + current_rows))
+        chunks.append("".join(template + current_rows))
         current_rows = [row]
-        if _bytes("\n".join(template + current_rows)) > max_bytes:
-            fallback = _chunk_by_max_bytes("\n".join(template + current_rows), max_bytes)
+        if _bytes("".join(template + current_rows)) > max_bytes:
+            fallback = _chunk_by_max_bytes("".join(template + current_rows), max_bytes)
             chunks.extend(fallback)
             current_rows = []
 
     if current_rows:
-        chunks.append("\n".join(template + current_rows))
+        chunks.append("".join(template + current_rows))
 
     return chunks or [content]
 
@@ -746,7 +757,7 @@ def build_feishu_card_elements(content: str) -> List[Dict[str, Any]]:
     """
 
     def _is_table_separator(row: str) -> bool:
-        return bool(re.match(r'^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$', row))
+        return _is_markdown_table_separator(row)
 
     def _parse_table_row(row: str) -> List[str]:
         return _parse_markdown_table_row(row)
@@ -789,7 +800,7 @@ def build_feishu_card_elements(content: str) -> List[Dict[str, Any]]:
             columns = []
             for idx, title in enumerate(header):
                 col_elements = [_div(f"**{title or '-'}**")]
-                for row in data_rows[:12]:
+                for row in data_rows:
                     col_elements.append(_div(row[idx] or "-", tag="plain_text"))
                 columns.append(
                     {
@@ -800,13 +811,10 @@ def build_feishu_card_elements(content: str) -> List[Dict[str, Any]]:
                         "elements": col_elements,
                     }
                 )
-            result: List[Dict[str, Any]] = [{"tag": "column_set", "columns": columns}]
-            if len(data_rows) > 12:
-                result.append(_div(f"还有 {len(data_rows) - 12} 行已省略", tag="plain_text"))
-            return result
+            return [{"tag": "column_set", "columns": columns}]
 
         row_elements: List[Dict[str, Any]] = []
-        for row in data_rows[:10]:
+        for row in data_rows:
             title = row[0] if row else "-"
             details = "　".join(
                 f"**{header[idx]}**：{row[idx] or '-'}"
@@ -814,8 +822,6 @@ def build_feishu_card_elements(content: str) -> List[Dict[str, Any]]:
                 if header[idx] or row[idx]
             )
             row_elements.append(_div(f"**{title}**\n{details}".strip()))
-        if len(data_rows) > 10:
-            row_elements.append(_div(f"还有 {len(data_rows) - 10} 行已省略", tag="plain_text"))
         return row_elements
 
     def _flush_table(buffer: List[str], output: List[Dict[str, Any]]) -> None:

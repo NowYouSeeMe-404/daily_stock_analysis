@@ -20,6 +20,7 @@ from src.formatters import (
     MIN_MAX_BYTES,
     _slice_at_effective_len,
     _chunk_by_max_words,
+    _parse_markdown_table_row,
 )
 
 
@@ -195,6 +196,20 @@ class TestChunkContentByMaxBytes(unittest.TestCase):
             if table_rows:
                 self.assertEqual(table_rows[0], "| 股票代码 | 名称 | 热度 |")
 
+    def test_chunked_table_keeps_newline_before_following_block(self):
+        content = "\n".join(
+            [
+                "| 指标 | 数值 |",
+                "| --- | --- |",
+                "| RSI | 70 |",
+                "下一段总结",
+            ]
+        )
+
+        result = chunk_content_by_max_bytes(content, 500)
+
+        self.assertEqual(result, [content])
+
     def test_slice_at_max_bytes_returns_truncated_and_remaining_parts(self):
         chunk, remaining = slice_at_max_bytes("测试ABC", 7)
         self.assertEqual(chunk, "测试A")
@@ -223,6 +238,16 @@ class TestFeishuMarkdownFormatter(unittest.TestCase):
         result = format_feishu_markdown("*   失效条件：缩量")
 
         self.assertEqual(result, "• 失效条件：缩量")
+
+    def test_table_row_trims_repeated_boundary_pipes(self):
+        self.assertEqual(
+            _parse_markdown_table_row("|| 指标 | 数值 ||"),
+            ["指标", "数值"],
+        )
+        self.assertEqual(
+            _parse_markdown_table_row("| 新闻 | AI \\| chips ||"),
+            ["新闻", "AI | chips"],
+        )
 
     def test_card_elements_render_tables_as_columns(self):
         content = """# 大盘复盘
@@ -253,3 +278,41 @@ class TestFeishuMarkdownFormatter(unittest.TestCase):
         self.assertEqual(len(column_set["columns"]), 3)
         self.assertIn("AI | chips", serialized)
         self.assertIn("后续", serialized)
+
+    def test_card_table_trims_repeated_boundary_pipes(self):
+        content = """|| 指标 | 数值 |
+|| --- | --- |
+|| RSI | 70 |
+"""
+        elements = build_feishu_card_elements(content)
+        column_set = next(element for element in elements if element["tag"] == "column_set")
+        serialized = json.dumps(elements, ensure_ascii=False)
+
+        self.assertEqual(len(column_set["columns"]), 2)
+        self.assertIn("RSI", serialized)
+        self.assertIn("70", serialized)
+
+    def test_card_table_preserves_all_rows(self):
+        narrow_rows = "\n".join(f"| 指标{i:02d} | {i} | 观察{i} |" for i in range(15))
+        narrow_content = "\n".join(
+            ["| 指标 | 数值 | 观察 |", "| --- | --- | --- |", narrow_rows]
+        )
+
+        narrow_elements = build_feishu_card_elements(narrow_content)
+        narrow_serialized = json.dumps(narrow_elements, ensure_ascii=False)
+
+        self.assertIn("指标14", narrow_serialized)
+        self.assertNotIn("已省略", narrow_serialized)
+
+        wide_rows = "\n".join(
+            f"| 股票{i:02d} | {i} | A{i} | B{i} | C{i} |" for i in range(12)
+        )
+        wide_content = "\n".join(
+            ["| 股票 | 热度 | A | B | C |", "| --- | --- | --- | --- | --- |", wide_rows]
+        )
+
+        wide_elements = build_feishu_card_elements(wide_content)
+        wide_serialized = json.dumps(wide_elements, ensure_ascii=False)
+
+        self.assertIn("股票11", wide_serialized)
+        self.assertNotIn("已省略", wide_serialized)
