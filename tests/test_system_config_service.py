@@ -1482,6 +1482,7 @@ class SystemConfigServiceTestCase(unittest.TestCase):
 
     @patch("litellm.completion")
     def test_test_llm_channel_omits_temperature_for_gpt5_family(self, mock_completion) -> None:
+        self._rewrite_env("LLM_TEMPERATURE=0.42")
         mock_completion.return_value = type(
             "MockResponse",
             (),
@@ -1501,6 +1502,7 @@ class SystemConfigServiceTestCase(unittest.TestCase):
         self.assertTrue(payload["success"])
         self.assertEqual(payload["resolved_model"], "openai/gpt5.5-ferr")
         self.assertNotIn("temperature", mock_completion.call_args.kwargs)
+        self.assertEqual(self.manager.read_config_map()["LLM_TEMPERATURE"], "0.42")
 
     @patch("litellm.completion")
     @patch("src.services.system_config_service.Config._load_from_env")

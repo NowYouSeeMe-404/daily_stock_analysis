@@ -412,6 +412,7 @@ class LLMToolAdapter:
 
         if extra:
             call_kwargs["extra_body"] = extra
+        # Request-time adaptation only; this never mutates config persistence fields like LLM_TEMPERATURE.
         call_kwargs = apply_litellm_generation_params(
             call_kwargs,
             model,

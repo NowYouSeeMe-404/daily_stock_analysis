@@ -2219,6 +2219,8 @@ class GeminiAnalyzer:
                 }
                 if extra:
                     call_kwargs["extra_body"] = extra
+                # Apply request-scoped generation rules only; persisted LLM_TEMPERATURE is resolved
+                # separately from runtime call argument normalization.
                 call_kwargs = apply_litellm_generation_params(
                     call_kwargs,
                     model,

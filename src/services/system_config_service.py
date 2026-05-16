@@ -727,6 +727,7 @@ class SystemConfigService:
             "max_tokens": 256,  # Increased to allow MiniMax-M2.7 thinking process + response
             "timeout": max(5.0, float(timeout_seconds)),
         }
+        # Adapt generation args only for this request; do not persist changes to LLM_TEMPERATURE.
         call_kwargs = apply_litellm_generation_params(
             call_kwargs,
             resolved_model,
@@ -1161,6 +1162,7 @@ class SystemConfigService:
             call_kwargs["api_base"] = base_url.strip()
         if extra:
             call_kwargs.update(extra)
+        # Keep runtime behavior isolated: this normalization does not rewrite runtime settings.
         call_kwargs = apply_litellm_generation_params(
             call_kwargs,
             resolved_model,
