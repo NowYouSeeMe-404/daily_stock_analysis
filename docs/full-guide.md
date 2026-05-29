@@ -205,7 +205,7 @@ daily_stock_analysis/
 ### 5. 完成！
 
 默认每个工作日 **18:00（北京时间）** 通过默认 workflow 的 `cron` 自动执行；若仓库未配置 `SCHEDULE_TIME`，该默认执行时点不会变化。
-`SCHEDULE_TIME` 当前仅用于本地内置调度（`python main.py --schedule`），不会影响 GitHub Actions 的触发时间。本次仅为文档澄清，不构成 issue #1497 的 runtime 实现交付，GitHub Actions 运行时调度能力补齐仍待实现；该需求请改用 `Refs #1497` 跟踪，不在 PR 语义里关闭。
+`SCHEDULE_TIME` 当前仅用于本地内置调度（`python main.py --schedule`），不会影响 GitHub Actions 的触发时间。本次仅为文档澄清，不是运行时交付；`#1497` 的 Actions 调度能力补齐仍待实现，请改用 `Refs #1497` 跟踪并避免在 PR 上使用 `Closes #1497` 关闭 issue。
 
 ---
 
