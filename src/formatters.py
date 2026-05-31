@@ -773,7 +773,26 @@ def _format_telegram_markdown_unprotected(content: str) -> str:
     result = re.sub(r'^#{1,6}\s+(.+)$', r'*\1*', result, flags=re.MULTILINE)
     result = re.sub(r'\*\*(.+?)\*\*', r'*\1*', result)
     result = re.sub(r'^\s*---+\s*$', '────────', result, flags=re.MULTILINE)
+    result = _escape_telegram_non_link_markdown_chars(result)
     return result.strip()
+
+
+def _escape_telegram_non_link_markdown_chars(content: str) -> str:
+    """Escape Telegram Markdown link metacharacters outside valid links."""
+
+    links: list[str] = []
+
+    def _save_link(match: re.Match) -> str:
+        links.append(match.group(0))
+        return f"@@DSA_TELEGRAM_LINK_{len(links) - 1}@@"
+
+    result = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', _save_link, content)
+    for char in ("[", "]", "(", ")"):
+        result = result.replace(char, f"\\{char}")
+
+    for index, link in enumerate(links):
+        result = result.replace(f"@@DSA_TELEGRAM_LINK_{index}@@", link)
+    return result
 
 
 def format_telegram_markdown(content: str) -> str:

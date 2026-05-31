@@ -332,6 +332,21 @@ class TestNotificationMarkdownFormatters(unittest.TestCase):
         self.assertIn("- 600519：强势", result)
         self.assertIn("[详情](https://example.com/report)", result)
 
+    def test_telegram_formatter_escapes_non_link_metacharacters(self):
+        text = (
+            "## [P4] 日报\n\n"
+            "| 股票 | 信号 |\n"
+            "| --- | --- |\n"
+            "| 600519 | [P4] 强势 (观察) |\n\n"
+            "详见 [详情](https://example.com/report)"
+        )
+
+        result = format_telegram_markdown(text)
+
+        self.assertIn("*\\[P4\\] 日报*", result)
+        self.assertIn("- 600519：\\[P4\\] 强势 \\(观察\\)", result)
+        self.assertIn("[详情](https://example.com/report)", result)
+
     def test_slack_formatter_uses_mrkdwn_links_and_tables(self):
         text = "## 日报\n\n| 股票 | 信号 |\n| --- | --- |\n| 600519 | 强势 |\n\n[详情](https://example.com/report)"
 

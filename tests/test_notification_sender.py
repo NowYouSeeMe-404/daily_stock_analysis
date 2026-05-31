@@ -1054,7 +1054,7 @@ class TestTelegramSender(unittest.TestCase):
         self.assertTrue(result)
         first_payload = mock_post.call_args_list[0][1]["json"]
         second_payload = mock_post.call_args_list[1][1]["json"]
-        self.assertEqual(first_payload["text"], "关注 *AAPL* (未闭合)")
+        self.assertEqual(first_payload["text"], "关注 *AAPL* \\(未闭合\\)")
         self.assertEqual(second_payload["text"], content)
 
     @mock.patch("src.notification_sender.telegram_sender.requests.post")
