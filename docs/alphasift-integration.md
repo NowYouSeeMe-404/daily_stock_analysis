@@ -17,6 +17,10 @@ ALPHASIFT_INSTALL_SPEC=git+https://github.com/ZhuLinsen/alphasift.git@2c76b2b607
 `ALPHASIFT_ENABLED=true`、重新加载运行时配置，并按 `ALPHASIFT_INSTALL_SPEC`
 执行一次自动安装或可用性检查。
 
+同样地，用户在设置页通用配置表单中直接将 `ALPHASIFT_ENABLED` 修改为 `true`
+并点击“保存配置”后，也会在保存成功后执行同一套自动安装与可用性检查链路；
+当保存为 `false` 时仅更新开关，不会发起安装请求。
+
 `ALPHASIFT_INSTALL_SPEC` 是传给 pip 的安装参数。为避免未认证调用触发任意 pip 安装，并保证部署可复现，默认值固定到当前兼容验证的 AlphaSift commit：
 
 ```bash

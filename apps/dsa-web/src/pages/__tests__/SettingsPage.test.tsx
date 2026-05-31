@@ -783,7 +783,7 @@ describe('SettingsPage', () => {
     expect(load).toHaveBeenCalledTimes(1);
   });
 
-  it('notifies alphasift status update after generic save when ALPHASIFT_ENABLED changes', async () => {
+  it('notifies alphasift status update and skips install after generic save when ALPHASIFT_ENABLED is set false', async () => {
     save.mockResolvedValue({ success: true });
     getChangedItems.mockReturnValue([{ key: 'ALPHASIFT_ENABLED', value: 'false' }]);
 
@@ -799,6 +799,26 @@ describe('SettingsPage', () => {
 
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     expect(notifyAlphaSiftConfigChanged).toHaveBeenCalledTimes(1);
+    expect(alphasiftInstall).not.toHaveBeenCalled();
+  });
+
+  it('notifies alphasift status update and triggers install after generic save when ALPHASIFT_ENABLED is set true', async () => {
+    save.mockResolvedValue({ success: true });
+    getChangedItems.mockReturnValue([{ key: 'ALPHASIFT_ENABLED', value: 'true' }]);
+
+    useSystemConfigMock.mockReturnValue(buildSystemConfigState({
+      hasDirty: true,
+      dirtyCount: 1,
+      getChangedItems: () => [{ key: 'ALPHASIFT_ENABLED', value: 'true' }],
+    }));
+
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /保存配置/ }));
+
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(notifyAlphaSiftConfigChanged).toHaveBeenCalledTimes(1);
+    expect(alphasiftInstall).toHaveBeenCalledTimes(1);
   });
 
   it('does not notify alphasift status when generic save updates other fields', async () => {

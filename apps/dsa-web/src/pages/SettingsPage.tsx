@@ -513,10 +513,25 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleSaveConfig = async () => {
-    const changedKeys = new Set(getChangedItems().map((item) => item.key));
+    const changedItems = getChangedItems();
+    const changedAlphaSiftItem = changedItems.find((item) => item.key === 'ALPHASIFT_ENABLED');
     const result = await save();
-    if (result.success && changedKeys.has('ALPHASIFT_ENABLED')) {
+    if (!result.success || !changedAlphaSiftItem) {
+      return;
+    }
+
+    try {
+      const isAlphaSiftEnabled = changedAlphaSiftItem.value.trim().toLowerCase() === 'true';
       notifyAlphaSiftConfigChanged();
+      if (isAlphaSiftEnabled) {
+        await alphasiftApi.install();
+        setEnvBackupActionSuccess('已开启 AlphaSift 选股，并完成依赖检查。');
+        return;
+      }
+
+      setEnvBackupActionSuccess('已关闭 AlphaSift 选股。');
+    } catch (error: unknown) {
+      setEnvBackupActionError(getParsedApiError(error));
     }
   };
 
