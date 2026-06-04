@@ -133,10 +133,17 @@ import importlib.machinery
 import sys
 
 import_root = sys.argv[1]
-for module_name in ("alphasift", "alphasift.dsa_adapter"):
-    spec = importlib.machinery.PathFinder.find_spec(module_name, [import_root])
-    if spec is None:
-        raise SystemExit(f"Missing {module_name} in packaged path: {import_root}")
+package_spec = importlib.machinery.PathFinder.find_spec("alphasift", [import_root])
+if package_spec is None:
+    raise SystemExit(f"Missing alphasift in packaged path: {import_root}")
+
+package_paths = package_spec.submodule_search_locations
+if not package_paths:
+    raise SystemExit(f"Packaged alphasift is not a package: {import_root}")
+
+adapter_spec = importlib.machinery.PathFinder.find_spec("alphasift.dsa_adapter", package_paths)
+if adapter_spec is None:
+    raise SystemExit(f"Missing alphasift.dsa_adapter in packaged path: {import_root}")
 
 print("OK")
 PY
