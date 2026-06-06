@@ -25,8 +25,9 @@ _AGGRESSIVE_BUY_MARKERS_ZH = (
     "加仓",
 )
 _AGGRESSIVE_BUY_MARKERS_EN = ("buy now", "strong buy", "aggressive buy", "chase", "add aggressively")
-_NEGATION_HINTS_ZH = ("暂不", "不建议", "不应", "不宜", "不能", "无法", "不允许", "禁止", "避免", "未", "不要", "别", "先不")
+_NEGATION_HINTS_ZH = ("暂不", "不建议", "不应", "不宜", "不能", "无法", "不允许", "禁止", "避免", "不要", "别", "先不")
 _NEGATION_HINTS_EN = (" not ", " do not ", "don't", "no ", "never", "avoid")
+_NEGATION_LOOKBACK = 6
 
 
 def apply_daily_market_context_guardrail(
@@ -169,7 +170,9 @@ def _has_aggressive_buy_signal(result: Any, *, language: str) -> bool:
     decision_type = str(getattr(result, "decision_type", "") or "").lower()
     if decision_type == "buy":
         advice = str(getattr(result, "operation_advice", "") or "")
-        return not _contains_negation(advice, language=language)
+        if _contains_any(advice, _buy_markers(language), language=language, require_negation=True):
+            return False
+        return True
     advice = str(getattr(result, "operation_advice", "") or "")
     return _contains_any(advice, _buy_markers(language), language=language)
 
@@ -178,7 +181,13 @@ def _buy_markers(language: str) -> tuple[str, ...]:
     return _AGGRESSIVE_BUY_MARKERS_EN if language == "en" else _AGGRESSIVE_BUY_MARKERS_ZH
 
 
-def _contains_any(text: str, markers: tuple[str, ...], *, language: str = "zh") -> bool:
+def _contains_any(
+    text: str,
+    markers: tuple[str, ...],
+    *,
+    language: str = "zh",
+    require_negation: bool = False,
+) -> bool:
     lowered = text.lower()
     negation_hints = _NEGATION_HINTS_ZH if language == "zh" else _NEGATION_HINTS_EN
     for marker in markers:
@@ -188,18 +197,28 @@ def _contains_any(text: str, markers: tuple[str, ...], *, language: str = "zh") 
             marker_pos = lowered.find(marker_lower, marker_pos)
             if marker_pos == -1:
                 break
-            context = lowered[max(0, marker_pos - 18):marker_pos]
-            if not any(hint in context for hint in negation_hints):
+            context = lowered[max(0, marker_pos - _NEGATION_LOOKBACK):marker_pos]
+            has_negation = _contains_negation_near_marker(context, negation_hints)
+            if require_negation:
+                if has_negation:
+                    return True
+            elif not has_negation:
                 return True
             marker_pos += len(marker_lower)
     return False
 
 
-def _contains_negation(text: str, *, language: str) -> bool:
-    lowered = str(text).lower()
-    hints = _NEGATION_HINTS_ZH if language == "zh" else _NEGATION_HINTS_EN
-    return any(hint in lowered for hint in hints)
-
+def _contains_negation_near_marker(context: str, negation_hints: tuple[str, ...]) -> bool:
+    separators = ("，", ",", "。", "；", ";", "：", ":", "？", "!", "！", "）", ")", "（", "(")
+    tail = context
+    sep_pos = -1
+    for separator in separators:
+        candidate = context.rfind(separator)
+        if candidate > sep_pos:
+            sep_pos = candidate
+    if sep_pos >= 0:
+        tail = context[sep_pos + 1 :]
+    return any(hint in tail for hint in negation_hints)
 
 def _is_high_confidence(value: Any) -> bool:
     return str(value or "").strip().lower() in {"高", "high"}
