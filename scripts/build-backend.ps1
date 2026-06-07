@@ -141,6 +141,26 @@ if (!(Test-Path 'dist\stock_analysis')) {
 
 Copy-Item -Path 'dist\stock_analysis' -Destination 'dist\backend\stock_analysis' -Recurse -Force
 
+Write-Host 'Verifying packaged AlphaSift importability...'
+$packagedEntry = Join-Path 'dist\backend\stock_analysis' 'stock_analysis.exe'
+if (-not (Test-Path $packagedEntry)) {
+  throw "Packaged backend entrypoint not found: $packagedEntry"
+}
+$previousProbe = $env:DSA_PACKAGED_ALPHASIFT_IMPORT_PROBE
+try {
+  $env:DSA_PACKAGED_ALPHASIFT_IMPORT_PROBE = '1'
+  & $packagedEntry
+  if ($LASTEXITCODE -ne 0) {
+    throw "Packaged backend cannot import alphasift.dsa_adapter; probe exited with code $LASTEXITCODE."
+  }
+} finally {
+  if ($null -eq $previousProbe) {
+    Remove-Item Env:DSA_PACKAGED_ALPHASIFT_IMPORT_PROBE -ErrorAction SilentlyContinue
+  } else {
+    $env:DSA_PACKAGED_ALPHASIFT_IMPORT_PROBE = $previousProbe
+  }
+}
+
 Write-Host 'Verifying static asset references (packaged)...'
 $packagedStatic = Join-Path 'dist\backend\stock_analysis' '_internal\static'
 if (-not (Test-Path $packagedStatic)) {
