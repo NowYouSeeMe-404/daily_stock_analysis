@@ -345,6 +345,24 @@ class MainScheduleModeTestCase(unittest.TestCase):
         start_bots.assert_not_called()
         error_log.assert_called_once()
 
+    def test_webui_only_maps_to_serve_only_and_exits_when_api_server_start_fails(self) -> None:
+        args = self._make_args(webui_only=True, host="127.0.0.1", port=8000)
+        config = self._make_config(webui_enabled=False)
+
+        with patch("main.parse_arguments", return_value=args), \
+             patch("main.get_config", return_value=config), \
+             patch("main.prepare_webui_frontend_assets", return_value=True), \
+             patch("main.start_api_server", side_effect=RuntimeError("port busy")), \
+             patch("main.start_bot_stream_clients") as start_bots, \
+             patch("main.run_full_analysis") as run_full_analysis, \
+             patch("main.logger.error") as error_log:
+            exit_code = main.main()
+
+        self.assertEqual(exit_code, 1)
+        start_bots.assert_not_called()
+        run_full_analysis.assert_not_called()
+        error_log.assert_called_once()
+
     def test_serve_mode_continues_single_analysis_when_api_server_start_fails(self) -> None:
         args = self._make_args(serve=True, host="127.0.0.1", port=8000)
         config = self._make_config(webui_enabled=False, run_immediately=True)
