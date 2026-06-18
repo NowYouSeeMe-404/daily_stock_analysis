@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from urllib.parse import quote
 from unittest.mock import Mock, patch
 
+import requests
+
 from src.config import Config
 from src.repositories.intelligence_repo import IntelligenceRepository
 from src.services.intelligence_service import IntelligenceService, IntelligenceServiceError
@@ -86,6 +88,17 @@ class IntelligenceServiceTestCase(unittest.TestCase):
         response.status_code = 302
         return response
 
+    def _mock_http_error_response(self, source_url: str):
+        response = Mock()
+        response.status_code = 403
+        response.url = source_url
+        response.headers = {}
+        response.raise_for_status.side_effect = requests.HTTPError(
+            f"403 Client Error: Forbidden for url: {source_url}"
+        )
+        response.iter_content.return_value = []
+        return response
+
     def test_create_fetch_and_deduplicate_rss_source(self) -> None:
         source = self.service.create_source({
             "name": "market-feed", "url": "https://feeds.example.com/rss.xml",
@@ -101,6 +114,25 @@ class IntelligenceServiceTestCase(unittest.TestCase):
         self.assertEqual(items["total"], 2)
         self.assertEqual(items["items"][0]["scope_type"], "market")
         self.assertTrue(items["items"][0]["url"].startswith("https://news.example.com/"))
+
+    def test_fetch_http_error_does_not_expose_source_query_secret(self) -> None:
+        secret_url = "https://feeds.example.com/rss.xml?token=super-secret"
+        source = self.service.create_source({
+            "name": "secret-feed", "url": secret_url, "scope_type": "market",
+        })
+
+        with patch("src.services.intelligence_service.requests.get", return_value=self._mock_http_error_response(secret_url)):
+            with self.assertRaises(IntelligenceServiceError) as ctx:
+                self.service.fetch_source(source["id"])
+
+        message = str(ctx.exception)
+        self.assertEqual(message, "fetch failed: upstream request failed")
+        self.assertNotIn(secret_url, message)
+        self.assertNotIn("token=", message)
+        self.assertNotIn("super-secret", message)
+        saved_source = self.service.repo.get_source(source["id"])
+        self.assertIsNotNone(saved_source)
+        self.assertEqual(saved_source.last_error, "fetch failed: upstream request failed")
 
     def test_private_network_url_is_rejected(self) -> None:
         with self.assertRaises(IntelligenceServiceError):

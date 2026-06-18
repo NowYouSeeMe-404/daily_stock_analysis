@@ -32,6 +32,7 @@ _ALLOWED_MARKETS = {"cn", "hk", "us", "global"}
 _PRIVATE_HOSTNAMES = {"localhost", "localhost.localdomain"}
 _MAX_FEED_BYTES = 2 * 1024 * 1024
 _MAX_FEED_REDIRECTS = 5
+_UPSTREAM_FETCH_FAILURE_MESSAGE = "fetch failed: upstream request failed"
 _REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 _DISABLE_REQUEST_PROXIES = {"http": None, "https": None}
 _DNS_GUARD_LOCK = threading.Lock()
@@ -333,7 +334,7 @@ class IntelligenceService:
         except IntelligenceServiceError:
             raise
         except Exception as exc:
-            raise IntelligenceServiceError(f"fetch failed: {exc}") from exc
+            raise IntelligenceServiceError(_UPSTREAM_FETCH_FAILURE_MESSAGE) from exc
         finally:
             if response is not None:
                 response.close()

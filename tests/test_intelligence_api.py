@@ -10,6 +10,7 @@ import socket
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import requests
 from fastapi.testclient import TestClient
 
 from api.app import create_app
@@ -46,6 +47,17 @@ class IntelligenceApiTestCase(unittest.TestCase):
         response.headers = {}
         response.raise_for_status.return_value = None
         response.iter_content.return_value = [RSS_FIXTURE]
+        return response
+
+    def _mock_http_error_response(self, source_url: str):
+        response = Mock()
+        response.status_code = 403
+        response.url = source_url
+        response.headers = {}
+        response.raise_for_status.side_effect = requests.HTTPError(
+            f"403 Client Error: Forbidden for url: {source_url}"
+        )
+        response.iter_content.return_value = []
         return response
 
     def test_create_fetch_and_query_items(self) -> None:
@@ -103,6 +115,38 @@ class IntelligenceApiTestCase(unittest.TestCase):
         self.assertTrue(body["message"].startswith("Fetch intelligence source failed"))
         self.assertNotIn("token=secret", body["message"])
         self.assertNotIn("abc12345", body["message"])
+
+    def test_upstream_fetch_errors_do_not_expose_query_secret(self) -> None:
+        secret_url = "https://feeds.example.com/rss.xml?token=super-secret"
+        payload = {
+            "name": "secret-feed",
+            "url": secret_url,
+            "source_type": "rss",
+            "scope_type": "market",
+            "market": "cn",
+        }
+        create_resp = self.client.post("/api/v1/intelligence/sources", json=payload)
+        self.assertEqual(create_resp.status_code, 200)
+        source_id = create_resp.json()["id"]
+
+        requests_to_check = [
+            ("test", lambda: self.client.post("/api/v1/intelligence/sources/test", json=payload)),
+            ("fetch", lambda: self.client.post(f"/api/v1/intelligence/sources/{source_id}/fetch")),
+        ]
+        with patch(
+            "src.services.intelligence_service.requests.get",
+            side_effect=lambda url, **_kwargs: self._mock_http_error_response(url),
+        ):
+            for endpoint, send_request in requests_to_check:
+                with self.subTest(endpoint=endpoint):
+                    response = send_request()
+                    self.assertEqual(response.status_code, 400)
+                    body = response.json()
+                    self.assertEqual(body["error"], "validation_error")
+                    self.assertEqual(body["message"], "fetch failed: upstream request failed")
+                    self.assertNotIn(secret_url, body["message"])
+                    self.assertNotIn("token=", body["message"])
+                    self.assertNotIn("super-secret", body["message"])
 
 
 if __name__ == "__main__":
