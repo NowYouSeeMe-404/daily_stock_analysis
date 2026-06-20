@@ -3,8 +3,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Activity } from 'lucide-react';
 import { decisionSignalsApi } from '../../api/decisionSignals';
 import { getParsedApiError, type ParsedApiError } from '../../api/error';
-import { ApiErrorAlert, Card, EmptyState } from '../common';
-import { DecisionSignalCard } from '../decision-signals/DecisionSignalDisplay';
+import { ApiErrorAlert, Card, Drawer, EmptyState } from '../common';
+import {
+  DecisionSignalCard,
+  DecisionSignalDetails,
+} from '../decision-signals/DecisionSignalDisplay';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { ReportType } from '../../types/analysis';
 import type { DecisionSignalItem } from '../../types/decisionSignals';
@@ -20,6 +23,7 @@ export const ReportDecisionSignals: React.FC<ReportDecisionSignalsProps> = ({
 }) => {
   const { t } = useUiLanguage();
   const [items, setItems] = useState<DecisionSignalItem[]>([]);
+  const [selected, setSelected] = useState<DecisionSignalItem | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ParsedApiError | null>(null);
   const requestIdRef = useRef(0);
@@ -31,6 +35,7 @@ export const ReportDecisionSignals: React.FC<ReportDecisionSignalsProps> = ({
     requestIdRef.current = requestId;
     setLoading(true);
     setItems([]);
+    setSelected(null);
     setError(null);
     try {
       const response = await decisionSignalsApi.list({
@@ -58,6 +63,7 @@ export const ReportDecisionSignals: React.FC<ReportDecisionSignalsProps> = ({
       requestIdRef.current += 1;
       setLoading(false);
       setItems([]);
+      setSelected(null);
       setError(null);
       return;
     }
@@ -72,39 +78,55 @@ export const ReportDecisionSignals: React.FC<ReportDecisionSignalsProps> = ({
   }
 
   return (
-    <Card
-      title={t('decisionSignals.reportSectionTitle')}
-      subtitle={t('decisionSignals.reportSectionDescription')}
-      padding="md"
-    >
-      {error ? (
-        <ApiErrorAlert
-          error={{ ...error, title: t('decisionSignals.reportErrorTitle') }}
-          actionLabel={t('common.retry')}
-          onAction={() => void loadSignals()}
-        />
-      ) : null}
-      {loading && items.length === 0 ? (
-        <div className="grid gap-3">
-          <div className="h-24 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
-          <div className="h-24 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
-        </div>
-      ) : null}
-      {!loading && !error && items.length === 0 ? (
-        <EmptyState
-          className="border-none bg-transparent py-6 shadow-none"
-          title={t('decisionSignals.reportEmptyTitle')}
-          description={t('decisionSignals.reportEmptyDescription')}
-          icon={<Activity className="h-6 w-6" />}
-        />
-      ) : null}
-      {items.length > 0 ? (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {items.map((item) => (
-            <DecisionSignalCard key={item.id} item={item} />
-          ))}
-        </div>
-      ) : null}
-    </Card>
+    <>
+      <Card
+        title={t('decisionSignals.reportSectionTitle')}
+        subtitle={t('decisionSignals.reportSectionDescription')}
+        padding="md"
+      >
+        {error ? (
+          <ApiErrorAlert
+            error={{ ...error, title: t('decisionSignals.reportErrorTitle') }}
+            actionLabel={t('common.retry')}
+            onAction={() => void loadSignals()}
+          />
+        ) : null}
+        {loading && items.length === 0 ? (
+          <div className="grid gap-3">
+            <div className="h-24 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+            <div className="h-24 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+          </div>
+        ) : null}
+        {!loading && !error && items.length === 0 ? (
+          <EmptyState
+            className="border-none bg-transparent py-6 shadow-none"
+            title={t('decisionSignals.reportEmptyTitle')}
+            description={t('decisionSignals.reportEmptyDescription')}
+            icon={<Activity className="h-6 w-6" />}
+          />
+        ) : null}
+        {items.length > 0 ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {items.map((item) => (
+              <DecisionSignalCard
+                key={item.id}
+                item={item}
+                onSelect={(selectedItem) => setSelected(selectedItem)}
+                selected={selected?.id === item.id}
+              />
+            ))}
+          </div>
+        ) : null}
+      </Card>
+
+      <Drawer
+        isOpen={Boolean(selected)}
+        onClose={() => setSelected(null)}
+        title={t('decisionSignals.detailTitle')}
+        width="max-w-3xl"
+      >
+        {selected ? <DecisionSignalDetails item={selected} /> : null}
+      </Drawer>
+    </>
   );
 };

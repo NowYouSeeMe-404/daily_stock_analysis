@@ -52,10 +52,14 @@ describe('DecisionSignalCard', () => {
     renderCard(onSelect);
 
     expect(screen.getByText('贵州茅台').closest('button')).toBeNull();
+    expect(screen.getByText('72%')).toBeInTheDocument();
+    expect(screen.getByText('1600 - 1620')).toBeInTheDocument();
+    expect(screen.getByText('业绩窗口')).toBeInTheDocument();
+    expect(screen.getByText('跌破 1550')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '查看 贵州茅台 AI 建议详情' }));
 
     expect(onSelect).toHaveBeenCalledWith(signal);
-    expect(screen.getByText('周期: 3 日')).toBeInTheDocument();
+    expect(screen.getByText('3 日')).toBeInTheDocument();
     expect(screen.getByText('计划质量: 完整')).toBeInTheDocument();
     expect(screen.getByText('阶段: 盘中')).toBeInTheDocument();
     expect(screen.queryByText('3d')).not.toBeInTheDocument();
@@ -159,6 +163,10 @@ describe('DecisionSignalDetails', () => {
     expect(screen.getAllByText('3 日').length).toBeGreaterThan(1);
     expect(screen.getByText('命中')).toBeInTheDocument();
     expect(screen.getByText('5%')).toBeInTheDocument();
+    expect(screen.getByText('催化')).toBeInTheDocument();
+    expect(screen.getByText('业绩窗口')).toBeInTheDocument();
+    expect(screen.getByText('失效条件')).toBeInTheDocument();
+    expect(screen.getByText('跌破 1550')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '无用' }));
     expect(onFeedbackSubmit).toHaveBeenCalledWith('not_useful');
   });

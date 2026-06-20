@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { decisionSignalsApi } from '../../../api/decisionSignals';
@@ -79,12 +79,14 @@ describe('ReportDecisionSignals', () => {
 
     expect(await screen.findByText('腾讯控股')).toBeInTheDocument();
     expect(screen.getByText('缺少成交量确认')).toBeInTheDocument();
-    expect(screen.getByText('周期: 5 日')).toBeInTheDocument();
+    expect(screen.getByText('5 日')).toBeInTheDocument();
     expect(screen.getByText('计划质量: 部分')).toBeInTheDocument();
     expect(screen.getByText('阶段: 盘后')).toBeInTheDocument();
     expect(screen.queryByText('5d')).not.toBeInTheDocument();
     expect(screen.queryByText('postmarket')).not.toBeInTheDocument();
     expect(screen.queryByText('partial')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看 腾讯控股 AI 建议详情' }));
+    expect(within(await screen.findByRole('dialog')).getByText('结构等待确认')).toBeInTheDocument();
     expect(decisionSignalsApi.list).toHaveBeenCalledWith({
       sourceReportId: 5,
       sourceType: 'analysis',
