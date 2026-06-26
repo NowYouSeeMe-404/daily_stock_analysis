@@ -79,6 +79,11 @@ ENV DATABASE_PATH=/app/data/stock_analysis.db
 # Web/API service
 ENV WEBUI_HOST=0.0.0.0
 ENV API_PORT=8000
+# Default stock watchlist: tech stocks (A/HK/US) + commodities (gold/oil ETFs)
+ENV STOCK_LIST=AAPL,MSFT,NVDA,TSLA,GOOGL,hk00700,hk09988,300750,002594,GLD,USO
+ENV SCHEDULE_TIME=18:00
+ENV REPORT_LANGUAGE=zh
+ENV MARKET_REVIEW_ENABLED=true
 
 # 暴露 API 端口
 EXPOSE 8000
