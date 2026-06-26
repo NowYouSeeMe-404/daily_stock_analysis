@@ -3,9 +3,33 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from src.llm.generation_backend import (
+# Monkey-patch httpx headers BEFORE litellm is imported anywhere downstream.
+# This bypasses Cloudflare 1010 (which blocks default Python-urllib User-Agent)
+# on routes like opencode.ai/zen/go/v1 that we hit from VPS IPs.
+_DEFAULT_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+try:
+    import httpx  # noqa: E402
+
+    _orig_httpx_init = httpx.Client.__init__
+
+    def _patched_httpx_init(self, *args, **kwargs):
+        headers = dict(kwargs.get("headers") or {})
+        headers.setdefault("User-Agent", _DEFAULT_UA)
+        if os.environ.get("LLM_OPENROUTER_BASE_URL", "").startswith("https://opencode.ai"):
+            headers.setdefault("Accept", "application/json")
+        kwargs["headers"] = headers
+        return _orig_httpx_init(self, *args, **kwargs)
+
+    httpx.Client.__init__ = _patched_httpx_init
+    httpx.AsyncClient.__init__ = _patched_httpx_init
+except Exception:  # pragma: no cover
+    pass
+
+from src.llm.generation_backend import (  # noqa: E402
     GenerationBackend,
     GenerationCapabilities,
     GenerationResult,
