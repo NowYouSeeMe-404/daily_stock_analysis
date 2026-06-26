@@ -14,18 +14,19 @@ _DEFAULT_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like G
 try:
     import httpx  # noqa: E402
 
-    _orig_httpx_init = httpx.Client.__init__
+    def _wrap_client_init(orig_init):
+        def wrapper(self, *args, **kwargs):
+            headers = dict(kwargs.get("headers") or {})
+            headers.setdefault("User-Agent", _DEFAULT_UA)
+            if os.environ.get("LLM_OPENROUTER_BASE_URL", "").startswith("https://opencode.ai"):
+                headers.setdefault("Accept", "application/json")
+            kwargs["headers"] = headers
+            return orig_init(self, *args, **kwargs)
+        return wrapper
 
-    def _patched_httpx_init(self, *args, **kwargs):
-        headers = dict(kwargs.get("headers") or {})
-        headers.setdefault("User-Agent", _DEFAULT_UA)
-        if os.environ.get("LLM_OPENROUTER_BASE_URL", "").startswith("https://opencode.ai"):
-            headers.setdefault("Accept", "application/json")
-        kwargs["headers"] = headers
-        return _orig_httpx_init(self, *args, **kwargs)
-
-    httpx.Client.__init__ = _patched_httpx_init
-    httpx.AsyncClient.__init__ = _patched_httpx_init
+    # Patch only the sync Client (litellm uses this). AsyncClient is left alone
+    # to avoid any super() complications.
+    httpx.Client.__init__ = _wrap_client_init(httpx.Client.__init__)
 except Exception:  # pragma: no cover
     pass
 
